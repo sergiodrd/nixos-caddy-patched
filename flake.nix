@@ -36,10 +36,8 @@
         system:
         let
           pkgs = nixpkgsFor.${system};
-        in
-        {
 
-          caddy = pkgs.buildGoModule {
+          caddy-unwrapped = pkgs.buildGoModule {
             pname = "caddy";
             inherit version;
             src = ./caddy-src;
@@ -59,7 +57,30 @@
               ];
             };
           };
-          default = self.packages.${system}.caddy;
+
+          # Wrap the caddy package to add the capability to bind to low ports.
+          # Unfortunately this will not work in sandboxed environments because we use `setcap`.
+          # Make sure to set `nix.settings.sandbox = false;` wherever you use this.
+          caddy = pkgs.stdenv.mkDerivation {
+            name = "caddy-with-cap";
+            buildInputs = [ pkgs.libcap ];
+
+            dontUnpack = true;
+
+            installPhase = ''
+              mkdir -p $out/bin
+              cp ${caddy-unwrapped}/bin/caddy $out/bin/caddy
+              setcap cap_net_bind_service=+ep $out/bin/caddy
+            '';
+
+            meta = caddy-unwrapped.meta // {
+              description = "${caddy-unwrapped.meta.description} (with cap_net_bind_service)";
+            };
+          };
+        in
+        {
+          inherit caddy-unwrapped caddy;
+          default = caddy;
         }
       );
 
